@@ -1,0 +1,300 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────
+
+enum Role {
+  SUPER_ADMIN
+  AGENCY_ADMIN
+  TERMINAL_SUPERVISOR
+  CASHIER
+  RISK_ANALYST
+  AUDITOR
+}
+
+enum AgencyStatus {
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+}
+
+enum TerminalStatus {
+  ONLINE
+  OFFLINE
+  SUSPENDED
+}
+
+enum PrinterStatus {
+  OK
+  LOW_PAPER
+  ERROR
+  OFFLINE
+}
+
+enum GameType {
+  KENO
+  SPORTS
+  NUMBER_SELECTION
+}
+
+enum GameStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum TicketStatus {
+  PENDING
+  CONFIRMED
+  PRINTED
+  CANCELLED
+  WIN
+  LOSS
+  SETTLED
+}
+
+enum DrawStatus {
+  PENDING
+  OPEN
+  CLOSED
+  PROCESSING
+  COMPLETED
+}
+
+enum WinStatus {
+  PENDING
+  APPROVED
+  PAID
+  REJECTED
+}
+
+enum AlertLevel {
+  WARNING
+  BREACH
+  CRITICAL
+}
+
+// ─── Models ──────────────────────────────────────────────────────────
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  role         Role      @default(CASHIER)
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  agencyId  String?
+  agency    Agency?  @relation(fields: [agencyId], references: [id])
+  terminalId String?   @unique
+  terminal   Terminal? @relation(fields: [terminalId], references: [id])
+
+  tickets    Ticket[]
+  auditLogs  AuditLog[]
+  sessions   Session[]
+
+  invitedById String?
+  invitedBy   User?    @relation("UserInvites", fields: [invitedById], references: [id])
+  invitees    User[]   @relation("UserInvites")
+
+  @@index([role])
+  @@index([agencyId])
+}
+
+model Agency {
+  id         String        @id @default(cuid())
+  name       String
+  code       String        @unique
+  commission Float         @default(5.0)
+  salesLimit Float         @default(100000)
+  status     AgencyStatus  @default(ACTIVE)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  parentId String?
+  parent   Agency?  @relation("AgencyHierarchy", fields: [parentId], references: [id])
+  children Agency[] @relation("AgencyHierarchy")
+
+  terminals Terminal[]
+  users     User[]
+
+  @@index([parentId])
+  @@index([status])
+}
+
+model Terminal {
+  id            String         @id @default(cuid())
+  name          String
+  code          String         @unique
+  status        TerminalStatus @default(OFFLINE)
+  geoLocked     Boolean        @default(true)
+  printerStatus PrinterStatus  @default(OK)
+  lastSyncAt    DateTime?
+  ipAddress     String?
+  geoLat        Float?
+  geoLng        Float?
+  offlineMode   Boolean        @default(false)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  agencyId String
+  agency   Agency  @relation(fields: [agencyId], references: [id])
+  userId   String?   @unique
+  user     User?
+
+  tickets Ticket[]
+
+  @@index([agencyId])
+  @@index([status])
+}
+
+model GameDefinition {
+  id            String     @id @default(cuid())
+  name          String
+  type          GameType
+  version       Int        @default(1)
+  status        GameStatus @default(DRAFT)
+  config        Json       @default("{}")
+  riskThreshold Float      @default(50000)
+  description   String?
+  createdBy     String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  tickets    Ticket[]
+  draws      Draw[]
+  riskAlerts RiskAlert[]
+
+  @@unique([name, version])
+  @@index([status])
+  @@index([type])
+}
+
+model Ticket {
+  id           String       @id @default(cuid())
+  ticketNumber String       @unique
+  selections   Json
+  amount       Float
+  status       TicketStatus @default(PENDING)
+  hash         String
+  prevHash     String
+  printedAt    DateTime?
+  cancelledAt  DateTime?
+  cancelReason String?
+  payoutAmount Float?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  gameId     String
+  game       GameDefinition @relation(fields: [gameId], references: [id])
+  terminalId String
+  terminal   Terminal       @relation(fields: [terminalId], references: [id])
+  userId     String
+  user       User           @relation(fields: [userId], references: [id])
+
+  winResults WinResult[]
+
+  @@index([gameId])
+  @@index([terminalId])
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([hash])
+}
+
+model Draw {
+  id          String     @id @default(cuid())
+  drawNumber  String     @unique
+  numbers     Json
+  status      DrawStatus @default(PENDING)
+  drawnAt     DateTime?
+  resultsHash String?
+  createdBy   String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  gameId String
+  game   GameDefinition @relation(fields: [gameId], references: [id])
+
+  winResults WinResult[]
+
+  @@index([gameId])
+  @@index([status])
+}
+
+model WinResult {
+  id          String    @id @default(cuid())
+  prizeAmount Float
+  status      WinStatus @default(PENDING)
+  paidAt      DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  ticketId String
+  ticket   Ticket @relation(fields: [ticketId], references: [id])
+  drawId   String
+  draw     Draw   @relation(fields: [drawId], references: [id])
+
+  @@index([ticketId])
+  @@index([drawId])
+  @@index([status])
+}
+
+model RiskAlert {
+  id            String     @id @default(cuid())
+  level         AlertLevel
+  message       String
+  threshold     Float
+  current       Float
+  autoSuspended Boolean  @default(false)
+  resolvedAt    DateTime?
+  createdAt     DateTime  @default(now())
+
+  gameId String
+  game   GameDefinition @relation(fields: [gameId], references: [id])
+
+  @@index([gameId])
+  @@index([level])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  entity    String
+  entityId  String?
+  data      Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  userId String
+  user   User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([entity, entityId])
+  @@index([createdAt])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  token        String   @unique
+  refreshToken String   @unique
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  userId String
+  user   User @relation(fields: [userId], references: [id])
+
+  @@index([token])
+  @@index([refreshToken])
+}
