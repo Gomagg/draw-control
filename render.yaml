@@ -3,8 +3,8 @@ services:
     name: draw-control
     runtime: node
     plan: free
-    buildCommand: npm install && npx prisma generate && npm run build
-    startCommand: npm start
+    buildCommand: npm install && DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy" npm run db:generate && npm run build
+    startCommand: npm run start
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
@@ -19,7 +19,7 @@ services:
       - key: JWT_REFRESH_SECRET
         generateValue: true
       - key: NEXT_PUBLIC_APP_URL
-        sync: false
+        value: https://draw-control.onrender.com
 
 databases:
   - name: lottery-db

@@ -96,7 +96,7 @@ model User {
 
   agencyId  String?
   agency    Agency?  @relation(fields: [agencyId], references: [id])
-  terminalId String?   @unique
+  terminalId String? @unique
   terminal   Terminal? @relation(fields: [terminalId], references: [id])
 
   tickets    Ticket[]
@@ -149,7 +149,7 @@ model Terminal {
 
   agencyId String
   agency   Agency  @relation(fields: [agencyId], references: [id])
-  userId   String?   @unique
+  userId   String? @unique
   user     User?
 
   tickets Ticket[]
